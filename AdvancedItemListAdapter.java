@@ -191,82 +191,57 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
         });
 
         recyclerView.addOnChildAttachStateChangeListener(new RecyclerView.OnChildAttachStateChangeListener() {
-            @Override public void onChildViewAttachedToWindow(@NonNull View view) {
-// Cancel any pending delayed detach/release because we're reattaching
-                try {
-                    if (pendingSharedPlayerReleaseRunnable != null) {
-                        mainHandler.removeCallbacks(pendingSharedPlayerReleaseRunnable);
-                        pendingSharedPlayerReleaseRunnable = null;
-                        pendingSharedPlayerReleasePosition = androidx.recyclerview.widget.RecyclerView.NO_POSITION;
-                    }
-                } catch (Throwable ignored) {}
-
-            }
+            @Override public void onChildViewAttachedToWindow(@NonNull View view) { }
 
             @Override public void onChildViewDetachedFromWindow(@NonNull View view) {
-
-                androidx.recyclerview.widget.RecyclerView.ViewHolder vh = recyclerView.getChildViewHolder(view);
+                RecyclerView.ViewHolder vh = recyclerView.getChildViewHolder(view);
                 if (!(vh instanceof ViewHolder)) return;
                 ViewHolder holder = (ViewHolder) vh;
 
                 if (holder == currentPlayerViewHolder) {
-                    try { holder.releasePlayer(); } catch (Throwable ignored) {}
+                    holder.releasePlayer();
                     currentPlayer = null;
                     currentPlayerViewHolder = null;
                     currentPlayingPosition = -1;
                 }
 
-// If the detached holder was the sharedHolder, DON'T detach the PlayerView immediately.
-// Schedule a delayed detach+release to avoid audio-only / black screen during quick scrolls.
+                // If the detached holder was the sharedHolder, detach the PlayerView immediately
+                // but DO NOT release the sharedPlayer right away. Schedule a delayed release.
                 if (holder == sharedHolder) {
-                    // Cancel any previously scheduled detach/release
+                    try { if (sharedHolder.playerView != null) sharedHolder.playerView.setPlayer(null); } catch (Throwable ignore) {}
+                    sharedHolder = null;
+
+                    // Cancel any previous pending release
                     try {
                         if (pendingSharedPlayerReleaseRunnable != null) {
                             mainHandler.removeCallbacks(pendingSharedPlayerReleaseRunnable);
                             pendingSharedPlayerReleaseRunnable = null;
-                            pendingSharedPlayerReleasePosition = androidx.recyclerview.widget.RecyclerView.NO_POSITION;
+                            pendingSharedPlayerReleasePosition = RecyclerView.NO_POSITION;
                         }
                     } catch (Throwable ignore) {}
 
-                    // Capture current sharedPosition so we only release if it hasn't changed
+                    // Schedule a release of the sharedPlayer after a short grace period.
+                    // If the item reattaches before this runs, we'll cancel it in onViewAttachedToWindow.
                     final int releasePos = sharedPosition;
                     pendingSharedPlayerReleasePosition = releasePos;
-
                     pendingSharedPlayerReleaseRunnable = () -> {
-                        // Only detach/release if nobody reattached and the position is still the same
+                        // If nobody reattached and the sharedPosition still matches, release the player
                         if (sharedHolder == null && sharedPosition == pendingSharedPlayerReleasePosition) {
                             try {
-                                // Detach player from any PlayerView (if still present)
-                                try {
-                                    if (sharedHolder != null && sharedHolder.playerView != null) {
-                                        sharedHolder.playerView.setPlayer(null);
-                                    }
-                                } catch (Throwable ignored) {}
-
-                                // Stop and release player
                                 if (sharedPlayer != null) {
                                     try { sharedPlayer.setPlayWhenReady(false); } catch (Throwable ignored) {}
                                     try { sharedPlayer.stop(); } catch (Throwable ignored) {}
                                     try { sharedPlayer.release(); } catch (Throwable ignored) {}
                                 }
                             } catch (Throwable ignored) {}
-
-                            // Clear shared state
                             sharedPlayer = null;
                             sharedTrackSelector = null;
-                            sharedPosition = androidx.recyclerview.widget.RecyclerView.NO_POSITION;
+                            sharedPosition = RecyclerView.NO_POSITION;
                         }
-
-                        // Clear pending state
                         pendingSharedPlayerReleaseRunnable = null;
-                        pendingSharedPlayerReleasePosition = androidx.recyclerview.widget.RecyclerView.NO_POSITION;
+                        pendingSharedPlayerReleasePosition = RecyclerView.NO_POSITION;
                     };
-
-                    // Schedule detach+release after a short grace window
                     mainHandler.postDelayed(pendingSharedPlayerReleaseRunnable, SHARED_PLAYER_RELEASE_DELAY_MS);
-
-                    // Note: we intentionally don't call holder.playerView.setPlayer(null) here immediately,
-                    // so quick reattachments will keep rendering and avoid audio-only black frames.
                 }
             }
         });
@@ -492,29 +467,7 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
         holder.playerView.setUseController(false);
         holder.playerView.setPlayer(sharedPlayer);
 
-
-
-        try {
-            // Keep last frame on player reset (available on newer StyledPlayerView versions)
-            holder.playerView.setKeepContentOnPlayerReset(true);
-        } catch (Throwable ignored) {}
-
-        try {
-            // Use black background/shutter so the view shows black instead of white when surface is not rendering.
-            holder.playerView.setShutterBackgroundColor(android.graphics.Color.BLACK);
-        } catch (Throwable ignored) {}
-
-        try {
-            // also set the PlayerView background defensively
-            holder.playerView.setBackgroundColor(android.graphics.Color.BLACK);
-        } catch (Throwable ignored) {}
-        try {
-            // Keep last frame on player reset (available on newer StyledPlayerView versions)
-            holder.playerView.setKeepContentOnPlayerReset(true);
-        } catch (Throwable ignored) {}
-
-// Avoid default black shutter when possible (transparent background)
-        // --- Double-tap like on playing video ---
+// --- Double-tap like on playing video ---
         final int adapterPosition = position; // ensure it's final for the lambda
 
         if (holder.playerView != null) {
@@ -1183,21 +1136,6 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
                 com.google.android.exoplayer2.ExoPlayer exoPlayer = new com.google.android.exoplayer2.ExoPlayer.Builder(context).build();
                 holder.playerView.setPlayer(exoPlayer);
 
-
-                try {
-                    // Keep last frame on player reset (available on newer StyledPlayerView versions)
-                    holder.playerView.setKeepContentOnPlayerReset(true);
-                } catch (Throwable ignored) {}
-
-                try {
-                    // Use black background/shutter so the view shows black instead of white when surface is not rendering.
-                    holder.playerView.setShutterBackgroundColor(android.graphics.Color.BLACK);
-                } catch (Throwable ignored) {}
-
-                try {
-                    // also set the PlayerView background defensively
-                    holder.playerView.setBackgroundColor(android.graphics.Color.BLACK);
-                } catch (Throwable ignored) {}
 // --- Double-tap like on playing video ---
                 final int adapterPosition = position; // ensure it's final for the lambda
 
