@@ -493,16 +493,28 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
         holder.playerView.setPlayer(sharedPlayer);
 
 
+
+        try {
+            // Keep last frame on player reset (available on newer StyledPlayerView versions)
+            holder.playerView.setKeepContentOnPlayerReset(true);
+        } catch (Throwable ignored) {}
+
+        try {
+            // Use black background/shutter so the view shows black instead of white when surface is not rendering.
+            holder.playerView.setShutterBackgroundColor(android.graphics.Color.BLACK);
+        } catch (Throwable ignored) {}
+
+        try {
+            // also set the PlayerView background defensively
+            holder.playerView.setBackgroundColor(android.graphics.Color.BLACK);
+        } catch (Throwable ignored) {}
         try {
             // Keep last frame on player reset (available on newer StyledPlayerView versions)
             holder.playerView.setKeepContentOnPlayerReset(true);
         } catch (Throwable ignored) {}
 
 // Avoid default black shutter when possible (transparent background)
-        try {
-            holder.playerView.setShutterBackgroundColor(android.graphics.Color.TRANSPARENT);
-        } catch (Throwable ignored) {}
-// --- Double-tap like on playing video ---
+        // --- Double-tap like on playing video ---
         final int adapterPosition = position; // ensure it's final for the lambda
 
         if (holder.playerView != null) {
@@ -1171,6 +1183,21 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
                 com.google.android.exoplayer2.ExoPlayer exoPlayer = new com.google.android.exoplayer2.ExoPlayer.Builder(context).build();
                 holder.playerView.setPlayer(exoPlayer);
 
+
+                try {
+                    // Keep last frame on player reset (available on newer StyledPlayerView versions)
+                    holder.playerView.setKeepContentOnPlayerReset(true);
+                } catch (Throwable ignored) {}
+
+                try {
+                    // Use black background/shutter so the view shows black instead of white when surface is not rendering.
+                    holder.playerView.setShutterBackgroundColor(android.graphics.Color.BLACK);
+                } catch (Throwable ignored) {}
+
+                try {
+                    // also set the PlayerView background defensively
+                    holder.playerView.setBackgroundColor(android.graphics.Color.BLACK);
+                } catch (Throwable ignored) {}
 // --- Double-tap like on playing video ---
                 final int adapterPosition = position; // ensure it's final for the lambda
 
