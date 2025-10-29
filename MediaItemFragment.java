@@ -253,7 +253,7 @@ public class MediaItemFragment extends Fragment implements Constants, TagClick {
         mProfileLayout = rootView.findViewById(R.id.profile_layout);
         mLikeLayout = rootView.findViewById(R.id.like_layout);
         mCommentLayout = rootView.findViewById(R.id.comment_layout);
-        mCommentLayout.setVisibility(View.GONE);
+        mCommentLayout.setVisibility(View.VISIBLE);
         mShareLayout = rootView.findViewById(R.id.share_layout);
         mShareLayout.setVisibility(View.GONE);
         mItemActionsLayout = rootView.findViewById(R.id.item_actions_layout);
@@ -287,12 +287,14 @@ public class MediaItemFragment extends Fragment implements Constants, TagClick {
 
                 Intent intent = new Intent(TAG_ITEM_ACTION_BOTTOM_SHEET);
                 intent.putExtra("message", "comments");
+
+                // Make sure the intent targets our app receiver (matches other handlers in this file)
+                intent.setPackage(App.getInstance().getPackageName());
+
                 getContext().sendBroadcast(intent);
 
                 if (exoplayer != null) {
-
                     mPlayImage.setVisibility(View.VISIBLE);
-
                     exoplayer.pause();
                 }
             }
