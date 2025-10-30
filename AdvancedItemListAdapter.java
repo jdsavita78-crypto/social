@@ -7,6 +7,7 @@ import android.text.Spanned;
 import android.text.style.ClickableSpan;
 import java.util.function.Function;
 import com.google.android.exoplayer2.trackselection.TrackSelectionParameters;
+import com.google.android.exoplayer2.video.VideoSize;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
 import com.google.android.exoplayer2.SeekParameters;
 import com.google.android.exoplayer2.C;
@@ -388,6 +389,14 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
 
     // --- ExoPlayer Setup for Playing a Video ---
     public void playVideo(ViewHolder holder, int position, boolean autoMuted) {
+
+// --- SAFE ATTACH GUARD: detach any previous player and enable keep-content-on-reset
+        try {
+            if (holder.playerView != null) {
+                holder.playerView.setPlayer(null);
+                try { holder.playerView.setKeepContentOnPlayerReset(true); } catch (Throwable ignoreKeep) {}
+            }
+        } catch (Throwable ignore) {}
 // If this video is already playing, do NOT reset/restart it!
         if (sharedPosition == position && sharedPlayer != null && sharedPlayer.isPlaying()) {
             // Already playing, just ensure it's visible and controls are set.
@@ -433,7 +442,51 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
                                 .build())
                         .build();
 
-                try { sharedPlayer.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT); } catch (Throwable ignore) {}
+                try { sharedPlayer.setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT);
+                    try {
+                        sharedPlayer.addListener(new com.google.android.exoplayer2.Player.Listener() {
+                            @Override
+                            public void onPlaybackStateChanged(int state) {
+                                if (sharedHolder != null && state == com.google.android.exoplayer2.Player.STATE_READY) {
+                                    try { sharedHolder.mVideoProgressBar.setVisibility(View.GONE); } catch (Throwable ignored) {}
+                                }
+                            }
+                            @Override
+                            public void onPlayerError(com.google.android.exoplayer2.PlaybackException error) {
+                                android.util.Log.e("ExoPlayer","onPlayerError", error);
+                                if (sharedHolder != null) {
+                                    try {
+                                        sharedHolder.mVideoProgressBar.setVisibility(View.GONE);
+                                        sharedHolder.playerView.setVisibility(View.GONE);
+                                        sharedHolder.mVideoImg.setVisibility(View.VISIBLE);
+                                        sharedHolder.mItemPlayVideo.setVisibility(View.VISIBLE);
+                                        sharedHolder.btnMute.setVisibility(View.GONE);
+                                    } catch (Throwable ignored) {}
+                                }
+                                try { sharedPlayer.stop(); } catch (Throwable ignored) {}
+                            }
+                            @Override
+                            public void onVideoSizeChanged(com.google.android.exoplayer2.video.VideoSize videoSize) {
+                                if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
+                                    try {
+                                        if (sharedHolder != null) {
+                                            sharedHolder.playerView.post(() -> {
+                                                try {
+                                                    if (sharedHolder.playerView != null) sharedHolder.playerView.setVisibility(View.VISIBLE);
+                                                    if (sharedHolder.mVideoImg != null) sharedHolder.mVideoImg.setVisibility(View.GONE);
+                                                    if (sharedHolder.mItemPlayVideo != null) sharedHolder.mItemPlayVideo.setVisibility(View.GONE);
+                                                    if (sharedHolder.mVideoProgressBar != null) sharedHolder.mVideoProgressBar.setVisibility(View.GONE);
+                                                } catch (Throwable ignored) {}
+                                            });
+                                        }
+                                    } catch (Throwable ignored) {}
+                                }
+                            }
+                        });
+                    } catch (Throwable t) {
+                        android.util.Log.e("ExoPlayer", "Failed to add sharedPlayer listener", t);
+                    }
+                } catch (Throwable ignore) {}
                 try { sharedPlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC); } catch (Throwable ignore) {}
 
                 sharedPlayer.addListener(new com.google.android.exoplayer2.Player.Listener() {
@@ -465,7 +518,9 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
         }
 
         holder.playerView.setUseController(false);
+        holder.playerView.setPlayer(null);
         holder.playerView.setPlayer(sharedPlayer);
+        try { holder.playerView.setKeepContentOnPlayerReset(true); } catch (Throwable ignored) {}
 
 // --- Double-tap like on playing video ---
         final int adapterPosition = position; // ensure it's final for the lambda
@@ -808,22 +863,7 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
                 playerView = v.findViewById(R.id.playerView);
                 btnMute = v.findViewById(R.id.btnMute);
 
-                
-// make player/shutter/background black to avoid white flash when attaching
-try {
-    if (playerView != null) {
-        playerView.setBackgroundColor(android.graphics.Color.BLACK);
-        // set shutter color if available (guarded)
-        try { playerView.setShutterBackgroundColor(android.graphics.Color.BLACK); } catch (Throwable ignored) {}
-        // reduce flicker when swapping players
-        try { playerView.setKeepContentOnPlayerReset(true); } catch (Throwable ignored) {}
-        // we use our own thumbnail ImageView, not PlayerView artwork
-        try { playerView.setUseArtwork(false); } catch (Throwable ignored) {}
-    }
-    View videoLayout = v.findViewById(R.id.video_layout);
-    if (videoLayout != null) videoLayout.setBackgroundColor(android.graphics.Color.BLACK);
-} catch (Throwable ignored) {}
-mFooterContainer = (LinearLayout) v.findViewById(R.id.cardFooterContainer);
+                mFooterContainer = (LinearLayout) v.findViewById(R.id.cardFooterContainer);
                 mReactionsContainer = (LinearLayout) v.findViewById(R.id.cardReactionsContainer);
 
                 mItemAuthorPhoto = (CircularImageView) v.findViewById(R.id.itemAuthorPhoto);
@@ -969,7 +1009,8 @@ mFooterContainer = (LinearLayout) v.findViewById(R.id.cardFooterContainer);
             if (exoPlayer != null) {
                 exoPlayer.release();
                 exoPlayer = null;
-            }
+
+                try { if (playerView != null) playerView.setPlayer(null); } catch (Throwable ignored) {}}
             if (playerView != null) {
                 playerView.setPlayer(null);
                 playerView.setVisibility(View.GONE);
@@ -3638,7 +3679,10 @@ mFooterContainer = (LinearLayout) v.findViewById(R.id.cardFooterContainer);
                 } catch (Throwable ignore) {}
 
                 try {
+                    holder.playerView.setUseController(false);
+                    holder.playerView.setPlayer(null);
                     holder.playerView.setPlayer(sharedPlayer);
+                    try { holder.playerView.setKeepContentOnPlayerReset(true); } catch (Throwable ignored) {}
                     holder.playerView.setVisibility(View.VISIBLE);
                     if (holder.btnMute != null) holder.btnMute.setVisibility(View.VISIBLE);
                     sharedHolder = holder;
