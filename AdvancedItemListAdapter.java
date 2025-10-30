@@ -49,6 +49,8 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewParent;
+import android.speech.tts.TextToSpeech;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
@@ -137,6 +139,9 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemListAdapter.ViewHolder> implements Constants, TagClick {
+    // TTS engine for caption read-aloud
+    private TextToSpeech tts = null;
+
     // Add these fields inside the adapter class (near other private fields)
     private final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private Runnable pendingSharedPlayerReleaseRunnable = null;
@@ -539,6 +544,9 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
                             // always animate video heart overlay
                             if (holder.mVideoHeartOverlay != null) {
                                 showHeartAnimation(holder.mVideoHeartOverlay);
+                                // Floating Heart Trails
+                                startHeartTrail(holder, e.getX(), e.getY(), true);
+
                             }
 
                             if (App.getInstance().getId() != 0 && !p.isMyLike()) {
@@ -1208,6 +1216,9 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
                                     // show video heart overlay for this holder
                                     if (holder.mVideoHeartOverlay != null) {
                                         showHeartAnimation(holder.mVideoHeartOverlay);
+                                        // Floating Heart Trails
+                                        startHeartTrail(holder, e.getX(), e.getY(), true);
+
                                     }
 
                                     if (App.getInstance().getId() != 0 && !p.isMyLike()) {
@@ -1817,6 +1828,9 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
                         // Always show video heart
                         if (holder.mVideoHeartOverlay != null) {
                             showHeartAnimation(holder.mVideoHeartOverlay);
+                            // Floating Heart Trails
+                            startHeartTrail(holder, e.getX(), e.getY(), true);
+
                         }
 
                         // Update like if needed
@@ -1894,6 +1908,9 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
                 // Always show heart animation
                 if (holder.mHeartOverlay != null) {
                     showHeartAnimation(holder.mHeartOverlay);
+                    // Floating Heart Trails
+                    startHeartTrail(holder, e.getX(), e.getY(), false);
+
                 }
 
                 // Update state & call like() only if not liked yet
@@ -3705,5 +3722,120 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
             }
         } catch (Throwable ignore) {}
     }
-}
 
+    // Clean up TTS (call from Fragment/Activity onDestroyView/Destroy)
+    public void releaseTts() {
+        try {
+            if (tts != null) {
+                tts.stop();
+                tts.shutdown();
+            }
+        } catch (Throwable ignored) {}
+        tts = null;
+    }
+
+
+    // Tiny color palette for floating hearts (edit here)
+    private static final int[] HEART_COLORS = new int[]{
+            Color.rgb(244, 67, 54),   // red 500
+            Color.rgb(233, 30, 99),   // pink 500
+            Color.rgb(255, 64, 129),  // pink A200
+            Color.rgb(255, 87, 34),   // deep orange 500
+            Color.rgb(255, 152, 0),   // amber 500
+            Color.rgb(156, 39, 176),  // purple 500
+            Color.rgb(103, 58, 183)   // deep purple 500
+    };
+
+    // Control how many hearts spawn per double-tap
+    // Set both to the same value (e.g., 3) to make it fixed.
+    private static final int HEART_TRAIL_MIN = 6;
+    private static final int HEART_TRAIL_MAX = 6;
+
+    // --- Floating Heart Trails helpers -----------------------------------------
+
+    private int dp(Context c, float v) {
+        return (int) (v * c.getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    /** Spawns a single small heart at (x,y) in container coords and animates it upward with drift. */
+    private void spawnHeartTrail(@NonNull ViewGroup container, float x, float y) {
+        final Context ctx = container.getContext();
+
+        // Create a tiny TextView heart (resource-free)
+        final android.widget.TextView heart = new android.widget.TextView(ctx);
+        heart.setText("❤");
+        // random size 14–22sp
+        float sizeSp = 14f + (float)(Math.random() * 8f);
+        heart.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, sizeSp);
+        try { heart.setTextColor(HEART_COLORS[(int)(Math.random()*HEART_COLORS.length)]); } catch (Throwable ignored) {}
+        heart.setAlpha(0.95f);
+
+        // Start slightly below the tap point for nicer feel
+        heart.setTranslationX(x);
+        heart.setTranslationY(y);
+
+        // Add to overlay container
+        container.addView(heart, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // Random horizontal drift: -24dp .. +24dp
+        float driftX = dp(ctx, (float)((Math.random() * 48f) - 24f));
+        // Upward travel: 72dp .. 112dp
+        float travelY = -dp(ctx, 72f + (float)(Math.random() * 40f));
+        // Duration: 700 .. 1100ms
+        long dur = 700 + (long)(Math.random() * 400);
+
+        heart.animate()
+                .translationXBy(driftX)
+                .translationYBy(travelY)
+                .alpha(0f)
+                .setDuration(dur)
+                .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
+                .withEndAction(() -> {
+                    try { container.removeView(heart); } catch (Throwable ignored) {}
+                })
+                .start();
+    }
+
+    /** Spawns 2–4 hearts with tiny delays, using the correct overlay container for image/video/text posts. */
+    private void startHeartTrail(@NonNull RecyclerView.ViewHolder vh, float tapX, float tapY, boolean onVideo) {
+        ViewHolder h = (ViewHolder) vh;
+
+        // Choose the best target to anchor the hearts:
+        // 1) video player (if onVideo and visible)
+        // 2) visible video thumbnail
+        // 3) visible post image
+        // 4) fallback: the whole itemView
+        View target = null;
+        if (onVideo && h.playerView != null && h.playerView.getVisibility() == View.VISIBLE) {
+            target = h.playerView;
+        } else if (h.mVideoImg != null && h.mVideoImg.getVisibility() == View.VISIBLE) {
+            target = h.mVideoImg;
+        } else if (h.mItemImg != null && h.mItemImg.getVisibility() == View.VISIBLE) {
+            target = h.mItemImg;
+        } else {
+            target = h.itemView;
+        }
+
+        if (target == null) return;
+        ViewParent parent = target.getParent();
+        if (!(parent instanceof ViewGroup)) return;
+        final ViewGroup container = (ViewGroup) parent;
+
+        // Convert tap coordinates (relative to target) into container coordinates
+        int[] targetLoc = new int[2];
+        int[] contLoc = new int[2];
+        target.getLocationOnScreen(targetLoc);
+        container.getLocationOnScreen(contLoc);
+        float inContainerX = tapX + (targetLoc[0] - contLoc[0]);
+        float inContainerY = tapY + (targetLoc[1] - contLoc[1]);
+
+        // HEART_TRAIL_MIN..MAX hearts, slight stagger
+        int count = HEART_TRAIL_MIN + (int)(Math.random() * (HEART_TRAIL_MAX - HEART_TRAIL_MIN + 1));
+        for (int i = 0; i < count; i++) {
+            long delay = i * 60L; // 0ms, 60ms, 120ms, ...
+            container.postDelayed(() -> spawnHeartTrail(container, inContainerX, inContainerY), delay);
+        }
+    }
+
+}
