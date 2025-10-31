@@ -3831,9 +3831,9 @@ public class AdvancedItemListAdapter extends RecyclerView.Adapter<AdvancedItemLi
         float inContainerY = tapY + (targetLoc[1] - contLoc[1]);
 
         // HEART_TRAIL_MIN..MAX hearts, slight stagger
-        int count = HEART_TRAIL_MIN + (int)(Math.random() * (HEART_TRAIL_MAX - HEART_TRAIL_MIN + 1));
+        int count = HEART_TRAIL_MIN + (int)(Math.random() * (HEART_TRAIL_MAX - HEART_TRAIL_MIN + 3));
         for (int i = 0; i < count; i++) {
-            long delay = i * 60L; // 0ms, 60ms, 120ms, ...
+            long delay = i * 40L; // 0ms, 60ms, 120ms, ...
             container.postDelayed(() -> spawnHeartTrail(container, inContainerX, inContainerY), delay);
         }
     }
